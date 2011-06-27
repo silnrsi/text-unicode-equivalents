@@ -68,8 +68,11 @@ for my $test (@tests) {
 	$test = [ sort @{$test} ];
 	
 	foreach my $src (@{$test}) 	{
-		my $res = [ sort @{all_strings($src)} ];
-		ok(_compare_arrays($test, $res), 't/tests "' . encode('ascii', $src, Encode::FB_PERLQQ) . '"');
+		SKIP: {
+			skip "Hangul Jamo test fails on Perl 5.10 or earlier", 1 if $src =~ /[\x{1100}-\x{11FF}]/ && $] < 5.012;
+			my $res = [ sort @{all_strings($src)} ];
+			ok(_compare_arrays($test, $res), 't/tests "' . encode('ascii', $src, Encode::FB_PERLQQ) . '"');
+		}
 	}
 }
 

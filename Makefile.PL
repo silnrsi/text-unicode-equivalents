@@ -6,7 +6,7 @@ if ($^O eq 'MSWin32')
 {
     @extras = (dist => { 
     	'TO_UNIX' => 'perl -Mtounix -e "tounix(\"$(DISTVNAME)\")"',
-    	'TARFLAGS' => '-cv --mode=644 -f'		# GNU tar: remove world-writable permissions.
+    	'TARFLAGS' => '-cv --mode=774 -f'		# GNU tar: remove world-writable permissions.
     	 });
 }
 WriteMakefile (

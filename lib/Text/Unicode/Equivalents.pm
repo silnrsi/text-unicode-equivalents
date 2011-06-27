@@ -15,7 +15,10 @@ require Exporter;
 our @ISA = qw(Exporter);
 our @EXPORT_OK = qw( all_strings );
 
-our $VERSION = '0.04';	#   RMH 2011-06-27
+our $VERSION = '0.05';	#   RMH 2011-06-27
+#	Changes to Makefile.PL and tests.t to improve portability
+#   Added comments about \X being different on 5.10 vs 5.12
+# our $VERSION = '0.04';	#   RMH 2011-06-27
 #	Perl 5.14 doesn't have unicore/UnicodeData.txt, so changing to use unicode/Decomposition.pl
 # our $VERSION = '0.03';	#   RMH 2011-06-24
 #   Change module name to Text::Unicode::Equivalents -- more acceptable to CPAN
@@ -74,7 +77,13 @@ sub all_strings
 		$spaceAdded = 1;
 	}
 	
-	# Split string into Extended Grapheme Clusters
+	# Split string into Extended Grapheme Clusters 
+	
+	# NB:
+	# on Perl prior to v5.12, \X matches Unicode "combining character sequence", equivalent to (?>\PM\pM*)
+	# on Perl v5.12 and later, \X matches Unicode "eXtended grapheme cluster"
+	# Thus \X matches combining hangul jamo sequence such as "\x{1100}\x{1161}\x{11a8}" on 12.0, but not 10.1
+	
 	my @clusters = ($s =~ m/(\X)/g);	
 	
 	# Generate all canonically equivalent permutation of each cluster:
