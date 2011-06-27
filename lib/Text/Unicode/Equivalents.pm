@@ -4,6 +4,7 @@ use strict;
 use warnings;
 use utf8;
 use Unicode::Normalize qw(NFD getCanon getComposite getCombinClass);
+use Unicode::UCD;
 use Encode;
 use Carp;
 
@@ -14,7 +15,9 @@ require Exporter;
 our @ISA = qw(Exporter);
 our @EXPORT_OK = qw( all_strings );
 
-our $VERSION = '0.03';	#   RMH 2011-06-24
+our $VERSION = '0.04';	#   RMH 2011-06-27
+#	Perl 5.14 doesn't have unicore/UnicodeData.txt, so changing to use unicode/Decomposition.pl
+# our $VERSION = '0.03';	#   RMH 2011-06-24
 #   Change module name to Text::Unicode::Equivalents -- more acceptable to CPAN
 #   Eliminate all but one public function, which is renamed all_strings()
 #   Previous version didn't synthesize singletons
@@ -43,58 +46,10 @@ Text::Unicode::Equivalents - synthesize canonically equivalent strings
 
 # The two things I can't seem to make the Unicode module do are to (1) compose two diacritics, e.g.,
 # <0308+0301> => 0344 (Unicode calls such decompositions "non-starters" and won't compose them) and
-# (2) *compose* a singleton.  So I parse UnicodeData.txt to generate two hashes:
+# (2) *compose* a singleton.  So I use unicore/Decomposition.pl to generate two hashes:
 
 my %sSingletonCompositions;	# keyed by single character string; returns its singleton composite, as a string.
 my %cpNonStarterComposites;	# keyed by two-character string that has a non-starter composition; returns codepoint of the composite.
-
-# The following two routines stolen/adapted shamelessly from Unicode::UCD
-
-sub _openunicode {
-    my ($rfh, @path) = @_;
-    my $f;
-    unless (defined $$rfh) {
-	for my $d (@INC) {
-	    use File::Spec;
-	    $f = File::Spec->catfile($d, "unicore", @path);
-	    last if open($$rfh, $f);
-	    undef $f;
-	}
-	croak __PACKAGE__, ": failed to find ",
-              File::Spec->catfile(@path), " in @INC"
-	    unless defined $f;
-    }
-    return $f;
-}	
-
-sub _getUCD {
-	my $fh;
-	_openunicode( \$fh, 'UnicodeData.txt' );
-	if( defined $fh ){
-		while( my $line = <$fh> ){
-			return unless defined $line;
-			chomp $line;
-			my %prop;
-			@prop{qw(
-			     code name category
-			     combining bidi decomposition
-			     decimal digit numeric
-			     mirrored unicode10 comment
-			     upper lower title
-			    )} = split(/;/, $line, -1);
-			if ($prop{decomposition} =~ /^([[:xdigit:]]{4,6})$/o) {
-				# Singleton decomposition -- keep a record of these:
-				$sSingletonCompositions{pack('U', hex($1))} = pack('U', hex($prop{code}));	# NB: hash values are strings
-			}
-			elsif ($prop{decomposition} =~ /^([[:xdigit:]]{4,6})\s+([[:xdigit:]]{4,6})$/o) {
-				# Possible non-starter decompsition
-				my ($c, $d1, $d2) = map{hex} ($prop{code}, $1, $2);
-				$cpNonStarterComposites{pack('UU', $d1, $d2)} = $c if getCombinClass($c) || getCombinClass($d1);  # NB: hash values are codepoints
-			}
-		}
-	}
-}
-
 
 =over
 
@@ -193,7 +148,7 @@ sub _permute_cluster {
 	return undef unless $s =~ /^\X$/;
 	
 	# retrieve required data from UnicodeData.txt
-	_getUCD unless %cpNonStarterComposites;
+	_getCompositions() unless %cpNonStarterComposites;
 	
 	my %res;	# Place to keep result strings (as keys so we eliminate duplicates)
 
@@ -278,6 +233,37 @@ sub _permute_cluster {
 	# All done. Return the results
 	[ keys(%res) ]
 }
+
+# I'm not happy with this hack. unicore/Decomposition.pl explicitly says the code is for internal use
+# only, but I don't know any other reasonably efficient way to construct lists of Unicode compositions
+# other than including my own copy of, for example UnicodeData.txt, but then I couldn't guarantee that
+# my copy was in sync with the local Perl installation.  Oh well.
+
+sub _getCompositions {
+	# Next few lines stolen shamelessly from Unicode::UCD
+    for (split /^/m, do "unicore/Decomposition.pl") {
+        my ($start, $end, $decomp) = / ^ (.+?) \t (.*?) \t (.+?)
+                                        \s* ( \# .* )?  # Optional comment
+                                        $ /x;
+        $end = $start if $end eq "";
+    
+    	if ($decomp =~ /^([[:xdigit:]]{4,6})$/o) {
+			# Singleton decomposition -- keep a record of these:
+			my $d = $1;
+			foreach my $c (hex($start) .. hex($end)) {
+				$sSingletonCompositions{pack('U', hex($d))} = pack('U', $c);	# NB: hash values are strings
+			}
+		}
+		elsif ($decomp =~ /^([[:xdigit:]]{4,6})\s+([[:xdigit:]]{4,6})$/o) {
+			# Possible non-starter decompsition
+			my ($d1, $d2) = map{hex} ($1, $2);
+			foreach my $c (hex($start) .. hex($end)) {
+				$cpNonStarterComposites{pack('UU', $d1, $d2)} = $c if getCombinClass($c) || getCombinClass($d1);  # NB: hash values are codepoints
+			}
+		}
+	}
+}
+
 
 # Given a string, return a reference to an unsorted array containing 
 # all permutations of the string. Does not filter out duplicates which
