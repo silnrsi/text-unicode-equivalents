@@ -13,3 +13,4 @@ CVS/
 \.ex_
 \.gz
 \.svn/
+^MYMETA\..*$
